@@ -27,3 +27,10 @@ overlay:
   cost_bps_sensitivity: [0, 2, 5, 10]
   execution_lag_days: 2           # position applies to return of day t+2
   max_weight: 1.0
+
+dq:
+  return_outlier_threshold: 0.15    # |log return| above this is flagged for review (not deleted)
+  stale_run_length: 5               # identical consecutive closes that trigger a warning
+  max_missing_fraction: 0.005       # missing trading days above this blocks the load
+  max_non_trading_fraction: 0.001   # off-calendar rows up to this share are dropped and flagged; more blocks
+  revision_tolerance: 1.0e-6        # relative change in stored close that counts as a vendor revision

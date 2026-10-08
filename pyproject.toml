@@ -20,7 +20,11 @@ dependencies = [
     "requests",
     "yfinance",
     "pandas-market-calendars",
+    "python-dotenv",
 ]
+
+[project.scripts]
+riskplatform = "riskplatform.cli:main"
 
 [project.optional-dependencies]
 api = ["fastapi", "uvicorn[standard]"]

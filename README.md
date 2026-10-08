@@ -18,3 +18,13 @@ To re-run migrations from scratch: `docker compose down -v && docker compose up 
 - `config/config.yaml`  all tunable parameters
 - `tests/`  unit and leakage tests
 - `docs/`  specification, model development document, validation report
+
+## Loading data
+```bash
+riskplatform init-calendar            # one-time: NYSE trading days into ref.trading_day
+riskplatform load-prices              # full-history refresh of all configured tickers
+riskplatform load-prices --tickers ^GSPC SPY
+```
+Each run records itself in `ops.pipeline_run` and every data-quality result in
+`ops.dq_check_result`. A ticker with a blocking (error) check is not written; the run
+exits non-zero.
