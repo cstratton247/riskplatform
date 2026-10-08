@@ -34,3 +34,9 @@ dq:
   max_missing_fraction: 0.005       # missing trading days above this blocks the load
   max_non_trading_fraction: 0.001   # off-calendar rows up to this share are dropped and flagged; more blocks
   revision_tolerance: 1.0e-6        # relative change in stored close that counts as a vendor revision
+
+stats:
+  bootstrap_draws: 1000
+  mean_block_length: 20             # stationary bootstrap; >= horizon because labels overlap
+  dm_horizon: 5                     # HAC lag = horizon - 1
+  seed: 12345

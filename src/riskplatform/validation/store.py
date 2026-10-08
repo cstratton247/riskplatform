@@ -5,7 +5,7 @@ import hashlib
 import json
 
 import pandas as pd
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, bindparam, text
 
 from riskplatform.ingest.prices import _git_sha
 from riskplatform.models.benchmarks import ModelSpec
@@ -53,7 +53,7 @@ def frame_hash(frame: pd.DataFrame) -> str:
 
 def write_walk_forward(
     engine: Engine, cfg: dict, specs: dict[str, ModelSpec], preds: pd.DataFrame,
-    metrics: pd.DataFrame, fold_info: dict, data_hash: str,
+    metrics: pd.DataFrame, fold_info: dict, trials: pd.DataFrame, data_hash: str, run_id: int,
 ) -> int:
     sha = _git_sha() or "unknown"
     written = 0
@@ -76,7 +76,7 @@ def write_walk_forward(
             conn.execute(text("delete from ml.model_version where name = :n and purpose = 'walk_forward' "
                               "and label_def_id = :ld"), p)
 
-            def _insert_version(fold_label, train_start, train_end):
+            def _insert_version(fold_label, train_start, train_end, chosen=None):
                 return conn.execute(
                     text("insert into ml.model_version (name, family, track, purpose, fold_label, label_def_id, "
                          "feature_set_id, train_start, train_end, hyperparameters, data_hash, git_sha) "
@@ -85,7 +85,8 @@ def write_walk_forward(
                     {"n": name, "fam": spec.family, "fl": fold_label, "ld": label_def_id,
                      "fs": base_set if name == "logit_full" else None,
                      "ts": train_start.date(), "te": train_end.date(),
-                     "hp": json.dumps({**spec.hyperparameters, "features": spec.features}),
+                     "hp": json.dumps({**spec.hyperparameters, "features": spec.features,
+                                       **({"chosen": chosen} if chosen else {})}),
                      "dh": data_hash, "sha": sha},
                 ).scalar_one()
 
@@ -97,11 +98,25 @@ def write_walk_forward(
                          "values (:mv, :sc, :m, :v, :n)"), recs)
 
             m = metrics[metrics["model"] == name]
+            t_all = trials[trials["model"] == name]
+            if not t_all.empty:
+                conn.execute(
+                    text("delete from ml.model_trial where hyperparameters->>'model' = :n "
+                         "and hyperparameters->>'label' = :lab"), {"n": name, "lab": label_name(cfg)})
+                conn.execute(
+                    text("insert into ml.model_trial (run_id, family, hyperparameters, outer_fold, "
+                         "metric_name, inner_cv_score) values (:run, :fam, cast(:hp as jsonb), :fold, :m, :s)"),
+                    [{"run": run_id, "fam": spec.family,
+                      "hp": json.dumps({"model": name, "label": label_name(cfg), "params": r.params}),
+                      "fold": r.fold, "m": r.metric, "s": float(r.score)}
+                     for r in t_all.itertuples(index=False)])
             for fold_label, fi in fold_info.items():
                 g = preds[(preds["model"] == name) & (preds["fold"] == fold_label)]
                 if g.empty:
                     continue
-                mv = _insert_version(fold_label, fi["train_start"], fi["train_end"])
+                t = trials[(trials["model"] == name) & (trials["fold"] == fold_label)]
+                chosen = t.loc[t["score"].idxmin(), "params"] if not t.empty else None
+                mv = _insert_version(fold_label, fi["train_start"], fi["train_end"], chosen)
                 conn.execute(
                     text("insert into ml.prediction (model_version_id, asset_id, as_of_date, probability) "
                          "values (:mv, :a, :d, :p)"),
@@ -114,3 +129,21 @@ def write_walk_forward(
             last = max(fi["train_end"] for fi in fold_info.values())
             _insert_metrics(_insert_version("pooled", first, last), "pooled", m[m["scope"] == "pooled"].iloc[0])
     return written
+
+
+def load_predictions(engine: Engine, cfg: dict) -> pd.DataFrame:
+    """Out-of-sample walk-forward predictions joined to outcomes, for analysis without re-fitting."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("select m.name, m.fold_label, o.as_of_date, o.probability, o.y "
+                 "from ml.v_prediction_outcome o join ml.model_version m using (model_version_id) "
+                 "join ml.label_definition ld using (label_def_id) "
+                 "where m.purpose = 'walk_forward' and ld.name = :n and ld.version = 1 and o.y is not null"),
+            {"n": label_name(cfg)}).fetchall()
+    if not rows:
+        raise RuntimeError("No walk-forward predictions found; run `riskplatform walk-forward` first")
+    df = pd.DataFrame(rows, columns=["model", "fold", "as_of_date", "prob", "y"])
+    df["as_of_date"] = pd.to_datetime(df["as_of_date"])
+    df["prob"] = df["prob"].astype(float)
+    df["y"] = df["y"].astype(int)
+    return df.sort_values(["model", "fold", "as_of_date"]).reset_index(drop=True)

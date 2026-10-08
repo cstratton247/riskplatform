@@ -27,7 +27,9 @@ riskplatform load-prices --tickers ^GSPC SPY
 riskplatform load-macro               # needs FRED_API_KEY in .env
 riskplatform build-labels             # target labels into ml.label
 riskplatform build-features           # features into feat.feature_value
-riskplatform walk-forward             # benchmark ladder over purged walk-forward folds
+riskplatform walk-forward             # full model ladder over purged walk-forward folds (a few minutes)
+riskplatform compare                  # fold-averaged table + significance tests from stored predictions
+# sensitivity: riskplatform build-labels --quantile 0.90 && riskplatform walk-forward --quantile 0.90 && riskplatform compare --quantile 0.90
 ```
 Each run records itself in `ops.pipeline_run` and every data-quality result in
 `ops.dq_check_result`. A ticker with a blocking (error) check is not written; the run

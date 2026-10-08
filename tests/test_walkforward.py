@@ -34,7 +34,8 @@ def _frame(n=5300, seed=0):
 
 def _run(frame, folds=None):
     folds = folds or make_folds(2013, 2023)
-    return run_walk_forward(frame, default_ladder(), folds, list(BASE_FEATURES), MODELING_START, HOLDOUT)
+    res = run_walk_forward(frame, default_ladder(), folds, list(BASE_FEATURES), MODELING_START, HOLDOUT)
+    return res.preds, res.fold_info
 
 
 def test_folds_cover_the_declared_years():

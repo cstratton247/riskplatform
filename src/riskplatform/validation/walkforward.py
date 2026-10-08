@@ -16,6 +16,13 @@ from riskplatform.models.benchmarks import ModelSpec
 from .metrics import classification_metrics
 
 
+@dataclass
+class WalkForwardResult:
+    preds: pd.DataFrame
+    fold_info: dict
+    trials: pd.DataFrame          # every hyperparameter configuration tried (inner CV)
+
+
 @dataclass(frozen=True)
 class Fold:
     year: int
@@ -58,10 +65,10 @@ def run_walk_forward(
     required_features: list[str],
     modeling_start,
     holdout_start,
-) -> tuple[pd.DataFrame, dict]:
-    """Returns (predictions, fold_info). Every model sees exactly the same train/test rows."""
+) -> WalkForwardResult:
+    """Every model sees exactly the same train/test rows."""
     rows = eligible_rows(frame, required_features, modeling_start, holdout_start)
-    preds, info = [], {}
+    preds, info, trials = [], {}, []
     for fold in folds:
         train, test = split_fold(rows, fold)
         if train.empty or test.empty:
@@ -71,12 +78,18 @@ def run_walk_forward(
             "n_train": len(train), "n_test": len(test),
         }
         for name, spec in models.items():
+            n_before = len(spec.trial_log)
             p = spec.fit_predict(train, test)
+            for t in spec.trial_log[n_before:]:
+                trials.append({"model": name, "fold": fold.label, **t})
             preds.append(pd.DataFrame(
                 {"model": name, "fold": fold.label, "as_of_date": test.index,
                  "prob": np.asarray(p, float), "y": test["y"].to_numpy()}
             ))
-    return pd.concat(preds, ignore_index=True), info
+    trial_cols = ["model", "fold", "params", "metric", "score"]
+    return WalkForwardResult(
+        pd.concat(preds, ignore_index=True), info, pd.DataFrame(trials, columns=trial_cols)
+    )
 
 
 def evaluate(preds: pd.DataFrame) -> pd.DataFrame:

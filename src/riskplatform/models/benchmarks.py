@@ -6,7 +6,7 @@ using the TRAINING window only.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 import numpy as np
@@ -27,6 +27,7 @@ class ModelSpec:
     features: list[str]
     hyperparameters: dict
     fit_predict: Callable[[pd.DataFrame, pd.DataFrame], np.ndarray]
+    trial_log: list = field(default_factory=list)   # filled by tuned models during fit_predict
 
 
 def _design(frame: pd.DataFrame, features: list[str]) -> np.ndarray:
