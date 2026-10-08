@@ -26,6 +26,9 @@ def main(argv: list[str] | None = None) -> int:
     lm = sub.add_parser("load-macro", help="load FRED/ALFRED series into macro.observation_vintage")
     lm.add_argument("--series", nargs="+")
 
+    sub.add_parser("build-features", help="compute features and write them to feat.feature_value")
+    sub.add_parser("build-labels", help="compute labels and write them to ml.label")
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = load_config()
@@ -52,6 +55,36 @@ def main(argv: list[str] | None = None) -> int:
         ok = load_macro(engine, cfg, args.series, api_key)
         print("All series loaded." if ok else "Finished with failures; see ops.pipeline_run.")
         return 0 if ok else 1
+
+    if args.command == "build-features":
+        from riskplatform.features.compute import compute_features
+        from riskplatform.features.store import (
+            finish_run, load_feature_inputs, start_run, write_features,
+        )
+
+        run_id = start_run(engine, "build_features")
+        try:
+            feats = compute_features(load_feature_inputs(engine))
+            n = write_features(engine, feats, cfg["target"]["asset"], run_id)
+        except Exception as exc:
+            finish_run(engine, run_id, 0, error=f"{type(exc).__name__}: {exc}")
+            raise
+        finish_run(engine, run_id, n)
+        print(f"Wrote {n} feature values ({feats.shape[1]} features, {feats.shape[0]} days)")
+        return 0
+
+    if args.command == "build-labels":
+        from riskplatform.features.store import build_and_write_labels, finish_run, start_run
+
+        run_id = start_run(engine, "build_labels")
+        try:
+            n = build_and_write_labels(engine, cfg)
+        except Exception as exc:
+            finish_run(engine, run_id, 0, error=f"{type(exc).__name__}: {exc}")
+            raise
+        finish_run(engine, run_id, n)
+        print(f"Wrote {n} label rows")
+        return 0
 
     from riskplatform.ingest.prices import load_prices
     from riskplatform.ingest.yahoo import YahooSource

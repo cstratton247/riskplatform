@@ -25,6 +25,8 @@ riskplatform init-calendar            # one-time: NYSE trading days into ref.tra
 riskplatform load-prices              # full-history refresh of all configured tickers
 riskplatform load-prices --tickers ^GSPC SPY
 riskplatform load-macro               # needs FRED_API_KEY in .env
+riskplatform build-labels             # target labels into ml.label
+riskplatform build-features           # features into feat.feature_value
 ```
 Each run records itself in `ops.pipeline_run` and every data-quality result in
 `ops.dq_check_result`. A ticker with a blocking (error) check is not written; the run
