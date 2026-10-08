@@ -29,6 +29,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("build-features", help="compute features and write them to feat.feature_value")
     sub.add_parser("build-labels", help="compute labels and write them to ml.label")
 
+    wf = sub.add_parser("walk-forward", help="run the benchmark ladder over purged walk-forward folds")
+    wf.add_argument("--no-db", action="store_true", help="print results without writing to the database")
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = load_config()
@@ -84,6 +87,41 @@ def main(argv: list[str] | None = None) -> int:
             raise
         finish_run(engine, run_id, n)
         print(f"Wrote {n} label rows")
+        return 0
+
+    if args.command == "walk-forward":
+        import pandas as pd
+
+        from riskplatform.features.compute import BASE_FEATURES
+        from riskplatform.features.store import finish_run, start_run
+        from riskplatform.models.benchmarks import default_ladder
+        from riskplatform.validation.store import frame_hash, load_modeling_frame, write_walk_forward
+        from riskplatform.validation.walkforward import evaluate, make_folds, run_walk_forward
+
+        v = cfg["validation"]
+        frame = load_modeling_frame(engine, cfg)
+        specs = default_ladder()
+        folds = make_folds(v["test_years"][0], v["test_years"][1])
+        preds, info = run_walk_forward(frame, specs, folds, list(BASE_FEATURES),
+                                       v["modeling_start"], v["final_holdout_start"])
+        metrics = evaluate(preds)
+
+        pd.set_option("display.width", 140)
+        cols = ["model", "n", "prevalence", "roc_auc", "pr_auc", "brier", "log_loss", "ece"]
+        print("\nPooled out-of-sample results (walk-forward, %d-%d):" % tuple(v["test_years"]))
+        print(metrics[metrics["scope"] == "pooled"][cols].round(4).to_string(index=False))
+        print("\nPR-AUC by fold:")
+        print(metrics[metrics["scope"] != "pooled"].pivot(index="scope", columns="model", values="pr_auc").round(3).to_string())
+
+        if not args.no_db:
+            run_id = start_run(engine, "walk_forward")
+            try:
+                n = write_walk_forward(engine, cfg, specs, preds, metrics, info, frame_hash(frame))
+            except Exception as exc:
+                finish_run(engine, run_id, 0, error=f"{type(exc).__name__}: {exc}")
+                raise
+            finish_run(engine, run_id, n)
+            print(f"\nSaved {n} predictions and metrics to the database.")
         return 0
 
     from riskplatform.ingest.prices import load_prices
