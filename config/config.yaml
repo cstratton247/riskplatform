@@ -1,0 +1,29 @@
+# All tunable parameters live here; code reads them, never hard-codes them.
+data:
+  start_date: "2004-01-01"
+  tickers:
+    indices: ["^GSPC", "^VIX", "^IXIC", "^DJI"]
+    etfs: ["SPY", "QQQ", "DIA", "TLT", "IEF", "SHY", "LQD", "HYG"]
+    sectors: ["XLF", "XLK", "XLE", "XLV", "XLY", "XLP", "XLI", "XLU", "XLB"]
+  fred_series: ["DFF", "DGS10", "DGS2", "T10Y2Y", "UNRATE", "CPIAUCSL"]
+
+target:
+  asset: "^GSPC"
+  horizon_days: 5
+  threshold_quantile: 0.80       # sensitivity: 0.90
+  threshold_lookback_obs: 252
+  trading_days_per_year: 252
+
+validation:
+  modeling_start: "2006-01-01"
+  initial_train_end: "2012-12-31"
+  test_years: [2013, 2023]        # inclusive range of yearly walk-forward folds
+  final_holdout_start: "2024-01-01"
+  embargo_days: 5
+
+overlay:
+  instrument: "SPY"
+  cost_bps_base: 5
+  cost_bps_sensitivity: [0, 2, 5, 10]
+  execution_lag_days: 2           # position applies to return of day t+2
+  max_weight: 1.0

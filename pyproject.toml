@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "riskplatform"
+version = "0.1.0"
+description = "Financial risk & predictive analytics platform"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "statsmodels",
+    "scikit-learn",
+    "arch",
+    "sqlalchemy>=2",
+    "psycopg[binary]>=3",
+    "pyyaml",
+    "requests",
+    "yfinance",
+    "pandas-market-calendars",
+]
+
+[project.optional-dependencies]
+api = ["fastapi", "uvicorn[standard]"]
+app = ["streamlit", "plotly"]
+dev = ["pytest", "pytest-benchmark", "ruff"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
