@@ -24,6 +24,7 @@ To re-run migrations from scratch: `docker compose down -v && docker compose up 
 riskplatform init-calendar            # one-time: NYSE trading days into ref.trading_day
 riskplatform load-prices              # full-history refresh of all configured tickers
 riskplatform load-prices --tickers ^GSPC SPY
+riskplatform load-macro               # needs FRED_API_KEY in .env
 ```
 Each run records itself in `ops.pipeline_run` and every data-quality result in
 `ops.dq_check_result`. A ticker with a blocking (error) check is not written; the run

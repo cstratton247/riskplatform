@@ -23,6 +23,9 @@ def main(argv: list[str] | None = None) -> int:
     lp.add_argument("--start", type=date.fromisoformat)
     lp.add_argument("--end", type=date.fromisoformat, help="exclusive; defaults to today")
 
+    lm = sub.add_parser("load-macro", help="load FRED/ALFRED series into macro.observation_vintage")
+    lm.add_argument("--series", nargs="+")
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = load_config()
@@ -36,6 +39,19 @@ def main(argv: list[str] | None = None) -> int:
         n = load_calendar(engine, start, end)
         print(f"Loaded {n} trading days ({start} to {end})")
         return 0
+
+    if args.command == "load-macro":
+        import os
+
+        from riskplatform.ingest.macro import load_macro
+
+        api_key = os.environ.get("FRED_API_KEY")
+        if not api_key:
+            print("FRED_API_KEY is not set in .env", file=sys.stderr)
+            return 2
+        ok = load_macro(engine, cfg, args.series, api_key)
+        print("All series loaded." if ok else "Finished with failures; see ops.pipeline_run.")
+        return 0 if ok else 1
 
     from riskplatform.ingest.prices import load_prices
     from riskplatform.ingest.yahoo import YahooSource
