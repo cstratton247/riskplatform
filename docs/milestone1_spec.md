@@ -356,3 +356,5 @@ Suggested three-week rhythm: **week 1** data layer, target, benchmarks, harness;
 | 2026-10-08 | Six comparisons (3 ML x {HAR, VIX}), Holm-adjusted | Declared before any tuned-model results | No |
 | 2026-10-08 | Overlay design declared: SPY, 2013-2023; random forest primary and logit_tuned secondary (chosen after walk-forward results); EWMA, VIX and buy-and-hold baselines; 10% target vol, 5 bps, 2-day lag | Declared before any overlay result | Walk-forward results seen; no overlay results |
 | 2026-10-08 | 90th-percentile label run as a robustness check; 80th remains primary. H1 held at 80th but not 90th | Spec-declared sensitivity | Yes |
+| 2026-10-10 | Added GJR-GARCH(1,1) benchmark rung (garch_logit); compared with the 3 ML models as a separate Holm family | Listed in the spec; implemented after the first results were seen | Yes |
+| 2026-10-10 | Risk engine declared: 60/40 SPY/IEF; historical, normal-EWMA, t-EWMA (df 5), GJR-FHS; 95% and 99%; backtest 2007-2023 | Declared before any risk results | No |

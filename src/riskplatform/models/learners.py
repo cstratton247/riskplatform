@@ -104,10 +104,15 @@ def random_forest() -> ModelSpec:
     )
 
 
-def full_ladder() -> dict[str, ModelSpec]:
+def full_ladder(returns: pd.Series | None = None) -> dict[str, ModelSpec]:
+    """Benchmarks plus tuned models. Pass the daily return series (holdout already removed) to
+    include the GARCH rung."""
     from .benchmarks import default_ladder
+    from .garch import garch_logit
 
     ladder = default_ladder()
+    if returns is not None:
+        ladder["garch_logit"] = garch_logit(returns)
     for spec in (logit_tuned(), hist_gb(), random_forest()):
         ladder[spec.name] = spec
     return ladder

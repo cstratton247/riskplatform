@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     cp = sub.add_parser("compare", help="significance tests and fold-averaged summary from stored predictions")
     cp.add_argument("--quantile", type=float, help="override target.threshold_quantile (e.g. 0.90)")
 
+    sub.add_parser("risk", help="VaR/ES methods, backtests (Kupiec, Christoffersen, Basel) and stress tests")
     sub.add_parser("overlay", help="decision-level backtest: model-driven exposure vs baselines, net of costs")
 
     args = parser.parse_args(argv)
@@ -112,7 +113,14 @@ def main(argv: list[str] | None = None) -> int:
 
         v = cfg["validation"]
         frame = load_modeling_frame(engine, cfg)
-        specs = default_ladder() if args.ladder_only else full_ladder()
+        returns = frame["ret_1d"][frame.index < pd.Timestamp(v["final_holdout_start"])]
+        if args.ladder_only:
+            from riskplatform.models.garch import garch_logit
+
+            specs = default_ladder()
+            specs["garch_logit"] = garch_logit(returns)
+        else:
+            specs = full_ladder(returns)
         folds = make_folds(v["test_years"][0], v["test_years"][1])
         result = run_walk_forward(frame, specs, folds, list(BASE_FEATURES),
                                   v["modeling_start"], v["final_holdout_start"])
@@ -152,6 +160,88 @@ def main(argv: list[str] | None = None) -> int:
         print("logloss_diff < 0 favors `model`; DM test with HAC variance.\n")
         tests = pairwise_tests(preds, cfg["stats"])
         print(tests.round(4).to_string(index=False) if not tests.empty else "(no ML models found)")
+        have = set(preds["model"].unique())
+        if "garch_logit" in have:
+            gp = [(m, "garch_logit") for m in ("logit_tuned", "hist_gb", "random_forest") if m in have]
+            print("\nAdditional benchmark added after the first results were seen: GARCH. "
+                  "Reported as its own family (Holm within these three).\n")
+            print(pairwise_tests(preds, cfg["stats"], pairs=gp).round(4).to_string(index=False))
+        return 0
+
+    if args.command == "risk":
+        import time
+        from pathlib import Path
+
+        import numpy as np
+        import pandas as pd
+
+        from riskplatform.features.pit import pit_daily
+        from riskplatform.features.store import load_macro, load_prices
+        from riskplatform.models.garch import fit_gjr, next_variance, variance_path
+        from riskplatform.risk import backtest as rb
+        from riskplatform.risk import stress as rs
+        from riskplatform.risk import var_es as ve
+
+        rc = cfg["risk"]
+        w = rc["portfolio"]
+        end = pd.Timestamp(rc["backtest_end"])
+        tickers = sorted(set(w) | {"SPY"})
+        prices = load_prices(engine, tickers)
+        adj = pd.DataFrame({t: prices[t]["adj_close"] for t in tickers})
+        rets = adj.pct_change().loc[:end]
+        port = rs.portfolio_returns(rets, w).dropna()
+        confs = rc["confidence_levels"]
+
+        est = {}
+        for c in confs:
+            est[("historical", c)] = ve.historical(port, c, rc["window"])
+            est[("normal_ewma", c)] = ve.normal(port, c, rc["ewma_lambda"])
+            est[("student_t_ewma", c)] = ve.student_t(port, c, rc["ewma_lambda"], rc["student_t_df"])
+        fhs = ve.filtered_historical(port, confs, rc["window"], rc["garch_min_fit_obs"], rc["backtest_start"])
+        for c in confs:
+            est[("fhs_gjr_garch", c)] = fhs[c]
+        table = rb.backtest_table(port, est, rc["backtest_start"], rc["backtest_end"])
+
+        pd.set_option("display.width", 220)
+        pd.set_option("display.max_columns", 30)
+        print(f"\nPortfolio {w}, 1-day VaR/ES backtest {rc['backtest_start']} to {rc['backtest_end']}")
+        show = table.drop(columns=["basel_green", "basel_yellow", "basel_red"]).round(4)
+        print(show.to_string(index=False))
+        print("\nBasel traffic light, 99% VaR, share of rolling 250-day windows:")
+        print(table[table["conf"] == 0.99][["method", "basel_green", "basel_yellow", "basel_red"]].round(3).to_string(index=False))
+
+        macro = load_macro(engine, ["DFF"])["DFF"]
+        cash = pit_daily(macro, port.index).shift(1) / 100 / 252
+        print("\nPortfolio metrics (through backtest_end):")
+        print(rs.portfolio_metrics(rets[list(w)], w, rets["SPY"], cash).round(4).to_string())
+        print("\nHistorical stress replays:")
+        print(rs.replay(port, rets["SPY"], rc["stress"]["replays"]).round(4).to_string())
+
+        b = rs.betas(rets[list(w)], rets["SPY"])
+        st = rc["stress"]
+        cov = rets[list(w)].dropna().cov()
+        base = rs.stressed_normal_var_es(cov, w, 0.99)
+        hyp = rs.stressed_normal_var_es(cov, w, 0.99, st["vol_multiplier"], st["correlation_blend"])
+        print(f"\nHypothetical: market {st['equity_shock']:.0%} with beta-scaled asset moves -> portfolio "
+              f"{rs.equity_shock_loss(w, b, st['equity_shock']):.2%}  (betas: {b.round(2).to_dict()})")
+        print(f"Gaussian 1-day 99%  baseline: VaR {base['var']:.2%} ES {base['es']:.2%}  |  "
+              f"vol x{st['vol_multiplier']}, correlation blend {st['correlation_blend']}: "
+              f"VaR {hyp['var']:.2%} ES {hyp['es']:.2%}")
+
+        x = port.to_numpy() * 100
+        params = fit_gjr(x)
+        h0 = float(np.var(x))
+        h = variance_path(x, params, h0)
+        resid = (x / np.sqrt(h))[-rc["window"]:]
+        h_next = float(next_variance(x, params, h)[-1])
+        t0 = time.perf_counter()
+        mv, me = ve.gjr_monte_carlo(params, h_next, resid, 0.99, rc["mc_horizon_days"], rc["mc_paths"])
+        print(f"\nGJR-GARCH Monte Carlo ({rc['mc_paths']:,} paths, {rc['mc_horizon_days']}-day) from {port.index[-1].date()}: "
+              f"VaR99 {mv:.2%}  ES99 {me:.2%}  [{time.perf_counter() - t0:.2f}s]")
+
+        out = Path("artifacts"); out.mkdir(exist_ok=True)
+        table.to_csv(out / "var_backtest.csv", index=False)
+        print("Backtest table saved to artifacts/var_backtest.csv.")
         return 0
 
     if args.command == "overlay":

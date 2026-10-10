@@ -25,6 +25,7 @@ def _frame(n=5300, seed=0):
     f = pd.DataFrame(rng.normal(size=(n, len(BASE_FEATURES))), index=idx, columns=BASE_FEATURES)
     for w in (5, 21, 63):
         f[f"rv_{w}d"] = np.sqrt(252 * r.pow(2).rolling(w).mean())
+    f["ret_1d"] = r
     f["vix_level"] = 100 * sigma * np.sqrt(252) * np.exp(rng.normal(0, 0.1, n))
     f["parkinson_21d"] = f["rv_21d"] * np.exp(rng.normal(0, 0.1, n))
     f["garman_klass_21d"] = f["rv_21d"] * np.exp(rng.normal(0, 0.1, n))
