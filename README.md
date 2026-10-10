@@ -29,6 +29,7 @@ riskplatform build-labels             # target labels into ml.label
 riskplatform build-features           # features into feat.feature_value
 riskplatform walk-forward             # full model ladder over purged walk-forward folds (a few minutes)
 riskplatform compare                  # fold-averaged table + significance tests from stored predictions
+riskplatform overlay                  # decision-level backtest vs buy-and-hold / EWMA / VIX rules
 # sensitivity: riskplatform build-labels --quantile 0.90 && riskplatform walk-forward --quantile 0.90 && riskplatform compare --quantile 0.90
 ```
 Each run records itself in `ops.pipeline_run` and every data-quality result in

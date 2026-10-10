@@ -81,4 +81,4 @@ def test_pairwise_tests_and_fold_mean_table_run_end_to_end():
     row = tests[tests["vs"] == "vix_logit"].iloc[0]
     assert row["pr_auc_diff"] > 0 and (tests["p_boot_holm"] >= tests["p_boot"]).all()
     table = fold_mean_table(evaluate(preds))
-    assert table.index[0] in {"hist_gb", "har_logit"} and "folds_beating_har_logit" in table.columns
+    assert table.index[0] in {"hist_gb", "har_logit"} and "folds_beat_har" in table.columns

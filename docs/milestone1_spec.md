@@ -354,3 +354,5 @@ Suggested three-week rhythm: **week 1** data layer, target, benchmarks, harness;
 | 2026-10-08 | Primary metric changed to fold-averaged PR-AUC; pooled becomes secondary | Ladder showed pooled scores mix within-year ranking with year-to-year base-rate shifts | Yes (benchmark ladder only; no tuned-model results) |
 | 2026-10-08 | Added tuned logistic (C in 0.01, 0.1, 1), HistGradientBoosting (4 configs), RandomForest (4 configs); inner metric log loss over last 3 years of each training window | Declared before any tuned-model results | Ladder results only |
 | 2026-10-08 | Six comparisons (3 ML x {HAR, VIX}), Holm-adjusted | Declared before any tuned-model results | No |
+| 2026-10-08 | Overlay design declared: SPY, 2013-2023; random forest primary and logit_tuned secondary (chosen after walk-forward results); EWMA, VIX and buy-and-hold baselines; 10% target vol, 5 bps, 2-day lag | Declared before any overlay result | Walk-forward results seen; no overlay results |
+| 2026-10-08 | 90th-percentile label run as a robustness check; 80th remains primary. H1 held at 80th but not 90th | Spec-declared sensitivity | Yes |

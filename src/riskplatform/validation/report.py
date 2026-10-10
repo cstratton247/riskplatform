@@ -21,7 +21,7 @@ def fold_mean_table(metrics: pd.DataFrame, reference: str = "har_logit") -> pd.D
         for model, g in per_fold.groupby("model", sort=False):
             g = g.set_index("scope")["pr_auc"]
             wins[model] = int((g > ref.reindex(g.index)).sum())
-        table[f"folds_beating_{reference}"] = pd.Series(wins)
+        table["folds_beat_har"] = pd.Series(wins)
     return table.sort_values("pr_auc", ascending=False)
 
 

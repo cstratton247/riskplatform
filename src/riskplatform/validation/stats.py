@@ -88,3 +88,25 @@ def holm(pvalues) -> np.ndarray:
         running = max(running, (m - rank) * p[i])
         adj[i] = min(1.0, running)
     return adj
+
+
+def sharpe(excess: np.ndarray, periods: int = 252) -> float:
+    sd = np.std(excess, ddof=1)
+    return float(np.mean(excess) / sd * np.sqrt(periods)) if sd > 0 else np.nan
+
+
+def paired_sharpe_bootstrap(
+    excess_a: np.ndarray, excess_b: np.ndarray, draws: int, mean_block: float, seed: int
+) -> dict:
+    """Bootstrap Sharpe(A) - Sharpe(B) using the SAME resampled days for both strategies."""
+    a, b = np.asarray(excess_a, float), np.asarray(excess_b, float)
+    rng = np.random.default_rng(seed)
+    obs = sharpe(a) - sharpe(b)
+    out = np.empty(draws)
+    for i in range(draws):
+        idx = stationary_bootstrap_indices(len(a), mean_block, rng)
+        out[i] = sharpe(a[idx]) - sharpe(b[idx])
+    p = 2 * min((out <= 0).mean(), (out >= 0).mean())
+    return {"obs_diff": float(obs), "ci_low": float(np.nanpercentile(out, 2.5)),
+            "ci_high": float(np.nanpercentile(out, 97.5)),
+            "p": float(min(1.0, max(p, 1.0 / (draws + 1))))}

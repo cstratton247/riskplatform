@@ -23,10 +23,19 @@ validation:
 
 overlay:
   instrument: "SPY"
+  primary_model: "random_forest"    # declared after the walk-forward results, before any overlay result
+  secondary_model: "logit_tuned"
+  target_vol: 0.10
+  target_vol_sensitivity: [0.08, 0.10, 0.12]
+  ewma_lambda: 0.94                 # RiskMetrics decay
   cost_bps_base: 5
   cost_bps_sensitivity: [0, 2, 5, 10]
-  execution_lag_days: 2           # position applies to return of day t+2
-  max_weight: 1.0
+  execution_lag_days: 2             # decided at close t, applied to the return of day t+2
+  lag_sensitivity: [1, 2]
+  max_weight: 1.0                   # no leverage
+  episodes:
+    covid_crash: ["2020-02-19", "2020-04-30"]
+    year_2022: ["2022-01-01", "2022-12-31"]
 
 dq:
   return_outlier_threshold: 0.15    # |log return| above this is flagged for review (not deleted)

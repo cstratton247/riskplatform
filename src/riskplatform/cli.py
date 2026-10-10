@@ -38,6 +38,8 @@ def main(argv: list[str] | None = None) -> int:
     cp = sub.add_parser("compare", help="significance tests and fold-averaged summary from stored predictions")
     cp.add_argument("--quantile", type=float, help="override target.threshold_quantile (e.g. 0.90)")
 
+    sub.add_parser("overlay", help="decision-level backtest: model-driven exposure vs baselines, net of costs")
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = load_config()
@@ -150,6 +152,51 @@ def main(argv: list[str] | None = None) -> int:
         print("logloss_diff < 0 favors `model`; DM test with HAC variance.\n")
         tests = pairwise_tests(preds, cfg["stats"])
         print(tests.round(4).to_string(index=False) if not tests.empty else "(no ML models found)")
+        return 0
+
+    if args.command == "overlay":
+        from pathlib import Path
+
+        import pandas as pd
+
+        from riskplatform.features.pit import pit_daily
+        from riskplatform.features.store import load_macro, load_prices
+        from riskplatform.strategy import overlay as ov
+        from riskplatform.validation.store import load_predictions
+
+        o, v = cfg["overlay"], cfg["validation"]
+        prices = load_prices(engine, [o["instrument"], "^VIX"])
+        spy = prices[o["instrument"]]["adj_close"]
+        spy_ret = spy.pct_change()
+        vix = prices["^VIX"]["close"]
+        cash = pit_daily(load_macro(engine, ["DFF"])["DFF"], spy.index).shift(1) / 100 / 252
+        preds = load_predictions(engine, cfg)
+        names = [o["primary_model"], o["secondary_model"]]
+        probs = {m: preds[preds["model"] == m].set_index("as_of_date")["prob"] for m in names}
+        window = (f"{v['test_years'][0]}-01-01", f"{v['test_years'][1]}-12-31")
+
+        w = ov.build_weights(spy_ret, vix, probs, o["target_vol"], o["max_weight"], o["ewma_lambda"])
+        bt = ov.run_backtest(w, spy_ret, cash, o["execution_lag_days"], o["cost_bps_base"],
+                             *window, f"model_{o['primary_model']}")
+        pd.set_option("display.width", 200)
+        n = len(bt["returns"])
+        print(f"\nBase case: {bt['returns'].index[0].date()} to {bt['returns'].index[-1].date()} ({n} days), "
+              f"{o['cost_bps_base']} bps costs, {o['execution_lag_days']}-day lag, target vol {o['target_vol']:.0%}, no leverage")
+        print(ov.performance(bt).round(4).to_string())
+        print("\nEpisodes (total return / max drawdown):")
+        print(ov.episode_table(bt, o["episodes"]).round(4).to_string())
+        vs = ["buy_hold", "ewma_vol_target", "vix_target"]
+        for m in names:
+            print(f"\nSharpe difference, model_{m} minus baseline (95% block-bootstrap CI, Holm within family):")
+            print(ov.sharpe_tests(bt, f"model_{m}", vs, cfg["stats"]).round(4).to_string(index=False))
+        print("\nNet Sharpe across lag / cost / target-volatility settings:")
+        sens = ov.sensitivity(spy_ret, vix, probs, cash, o, window, o["primary_model"])
+        print(sens.round(3).to_string(index=False))
+
+        out = Path("artifacts"); out.mkdir(exist_ok=True)
+        bt["returns"].to_csv(out / "overlay_returns.csv")
+        bt["held"].to_csv(out / "overlay_exposure.csv")
+        print("\nDaily returns and exposures saved to artifacts/.")
         return 0
 
     from riskplatform.ingest.prices import load_prices
