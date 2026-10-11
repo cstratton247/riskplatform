@@ -111,3 +111,12 @@ def test_many_off_calendar_rows_still_block():
     cleaned, result = drop_minor_non_trading_rows(df, DAYS, "X", max_fraction=0.001)
     assert result is None and len(cleaned) == len(df)                   # nothing dropped
     assert _run(cleaned)["non_trading_dates"].blocking                  # the main check blocks
+
+
+def test_rows_beyond_a_stale_calendar_block_instead_of_being_dropped():
+    df = _frame()
+    stale_calendar = DAYS[:990]                       # calendar ends 10 days before the data does
+    cleaned, result = drop_minor_non_trading_rows(df, stale_calendar, "X", max_fraction=0.05)
+    assert result is not None and result.check_name == "calendar_stale" and result.blocking
+    assert len(cleaned) == len(df)                    # nothing is silently discarded
+    assert result.details["rows_beyond"] == 10

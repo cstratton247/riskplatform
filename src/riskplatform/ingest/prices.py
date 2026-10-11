@@ -108,6 +108,11 @@ def load_prices(
     end: date,
 ) -> bool:
     """Returns True if every ticker loaded without a blocking failure."""
+    from .calendar import load_calendar
+
+    # Keep the trading calendar current; an out-of-date calendar would otherwise hide new days.
+    load_calendar(engine, date.fromisoformat(cfg["data"]["start_date"]), end)
+
     configured = [t for group in cfg["data"]["tickers"].values() for t in group]
     wanted = tickers or configured
     dq_cfg = cfg["dq"]

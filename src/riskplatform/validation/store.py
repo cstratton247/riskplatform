@@ -54,6 +54,7 @@ def frame_hash(frame: pd.DataFrame) -> str:
 def write_walk_forward(
     engine: Engine, cfg: dict, specs: dict[str, ModelSpec], preds: pd.DataFrame,
     metrics: pd.DataFrame, fold_info: dict, trials: pd.DataFrame, data_hash: str, run_id: int,
+    purpose: str = "walk_forward",
 ) -> int:
     sha = _git_sha() or "unknown"
     written = 0
@@ -69,20 +70,20 @@ def write_walk_forward(
 
         for name, spec in specs.items():
             old = ("select model_version_id from ml.model_version where name = :n "
-                   "and purpose = 'walk_forward' and label_def_id = :ld")
-            p = {"n": name, "ld": label_def_id}
+                   "and purpose = :pu and label_def_id = :ld")
+            p = {"n": name, "ld": label_def_id, "pu": purpose}
             conn.execute(text(f"delete from ml.evaluation_result where model_version_id in ({old})"), p)
             conn.execute(text(f"delete from ml.prediction where model_version_id in ({old})"), p)
-            conn.execute(text("delete from ml.model_version where name = :n and purpose = 'walk_forward' "
+            conn.execute(text("delete from ml.model_version where name = :n and purpose = :pu "
                               "and label_def_id = :ld"), p)
 
             def _insert_version(fold_label, train_start, train_end, chosen=None):
                 return conn.execute(
                     text("insert into ml.model_version (name, family, track, purpose, fold_label, label_def_id, "
                          "feature_set_id, train_start, train_end, hyperparameters, data_hash, git_sha) "
-                         "values (:n, :fam, 'classification', 'walk_forward', :fl, :ld, :fs, :ts, :te, "
+                         "values (:n, :fam, 'classification', :pu, :fl, :ld, :fs, :ts, :te, "
                          "cast(:hp as jsonb), :dh, :sha) returning model_version_id"),
-                    {"n": name, "fam": spec.family, "fl": fold_label, "ld": label_def_id,
+                    {"n": name, "pu": purpose, "fam": spec.family, "fl": fold_label, "ld": label_def_id,
                      "fs": base_set if name == "logit_full" else None,
                      "ts": train_start.date(), "te": train_end.date(),
                      "hp": json.dumps({**spec.hyperparameters, "features": spec.features,
@@ -102,12 +103,15 @@ def write_walk_forward(
             if not t_all.empty:
                 conn.execute(
                     text("delete from ml.model_trial where hyperparameters->>'model' = :n "
-                         "and hyperparameters->>'label' = :lab"), {"n": name, "lab": label_name(cfg)})
+                         "and hyperparameters->>'label' = :lab "
+                         "and coalesce(hyperparameters->>'purpose', 'walk_forward') = :pu"),
+                    {"n": name, "lab": label_name(cfg), "pu": purpose})
                 conn.execute(
                     text("insert into ml.model_trial (run_id, family, hyperparameters, outer_fold, "
                          "metric_name, inner_cv_score) values (:run, :fam, cast(:hp as jsonb), :fold, :m, :s)"),
                     [{"run": run_id, "fam": spec.family,
-                      "hp": json.dumps({"model": name, "label": label_name(cfg), "params": r.params}),
+                      "hp": json.dumps({"model": name, "label": label_name(cfg), "purpose": purpose,
+                                        "params": r.params}),
                       "fold": r.fold, "m": r.metric, "s": float(r.score)}
                      for r in t_all.itertuples(index=False)])
             for fold_label, fi in fold_info.items():

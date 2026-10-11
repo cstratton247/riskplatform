@@ -67,5 +67,8 @@ risk:
       covid_2020: ["2020-02-19", "2020-03-23"]
       rates_2022: ["2022-01-03", "2022-10-12"]
     equity_shock: -0.20
+    joint_shocks:                   # explicit asset moves, e.g. the 2022 stock-bond selloff
+      stock_bond_selloff: {SPY: -0.20, IEF: -0.10}
+      flight_to_quality: {SPY: -0.20, IEF: 0.05}
     vol_multiplier: 2.0
     correlation_blend: 0.5

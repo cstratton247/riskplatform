@@ -38,6 +38,11 @@ def main(argv: list[str] | None = None) -> int:
     cp = sub.add_parser("compare", help="significance tests and fold-averaged summary from stored predictions")
     cp.add_argument("--quantile", type=float, help="override target.threshold_quantile (e.g. 0.90)")
 
+    fz = sub.add_parser("freeze", help="record the frozen design (commit freeze/ afterwards)")
+    fz.add_argument("--allow-dirty", action="store_true", help="freeze even with uncommitted changes (recorded)")
+    fz.add_argument("--verify", action="store_true", help="only check an existing freeze; write nothing")
+    ho = sub.add_parser("holdout", help="evaluate the final holdout ONCE, if the freeze is intact")
+    ho.add_argument("--check", action="store_true", help="verify the freeze without touching the holdout")
     sub.add_parser("risk", help="VaR/ES methods, backtests (Kupiec, Christoffersen, Basel) and stress tests")
     sub.add_parser("overlay", help="decision-level backtest: model-driven exposure vs baselines, net of costs")
 
@@ -168,6 +173,56 @@ def main(argv: list[str] | None = None) -> int:
             print(pairwise_tests(preds, cfg["stats"], pairs=gp).round(4).to_string(index=False))
         return 0
 
+    if args.command in ("freeze", "holdout"):
+        import json
+        from pathlib import Path
+
+        import pandas as pd
+
+        import riskplatform
+        from riskplatform.models.learners import full_ladder
+        from riskplatform.validation import freeze as fz_mod
+        from riskplatform.validation import holdout as ho_mod
+        from riskplatform.validation.store import frame_hash, load_modeling_frame
+
+        pkg_root = Path(riskplatform.__file__).resolve().parent
+        repo = pkg_root.parents[1]
+        manifest_path = repo / "freeze" / fz_mod.MANIFEST_NAME
+
+        if args.command == "holdout":
+            problems = ho_mod.run(engine, cfg, repo, pkg_root, manifest_path, check_only=args.check)
+            if problems:
+                print("Holdout NOT run. Problems:")
+                print("\n".join(f"  - {p}" for p in problems))
+                return 1
+            if args.check:
+                print("Freeze intact; the holdout has not been run. Safe to run `riskplatform holdout`.")
+            else:
+                print(f"Holdout evaluated once. Report: {manifest_path.parent / fz_mod.RESULTS_NAME}")
+                print("Commit freeze/ and artifacts/holdout/ as the record.")
+            return 0
+
+        frame = load_modeling_frame(engine, cfg)
+        hs = pd.Timestamp(cfg["validation"]["final_holdout_start"])
+        pre = frame[frame.index < hs]
+        specs = full_ladder(pd.Series(dtype=float))
+        if args.verify:
+            manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else None
+            problems = fz_mod.verify(manifest, cfg, specs, pkg_root, frame_hash(pre))
+            print("Freeze intact." if not problems else "Freeze BROKEN:\n" + "\n".join(f"  - {p}" for p in problems))
+            return 1 if problems else 0
+        git = fz_mod.git_state(repo)
+        if git and git["dirty"] and not args.allow_dirty:
+            print("Uncommitted changes present. Commit them first (or pass --allow-dirty; it is recorded).")
+            return 1
+        manifest = fz_mod.build_manifest(cfg, specs, pkg_root, frame_hash(pre), len(pre),
+                                         int((frame.index >= hs).sum()), git, repo / "docs" / "milestone1_spec.md")
+        manifest_path.parent.mkdir(exist_ok=True)
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str), encoding="utf-8")
+        print(f"Freeze written: {manifest_path}\nfreeze_id {manifest['freeze_id']}")
+        print("Next: git add freeze/ && git commit -m 'Freeze design' && git tag freeze-v1")
+        return 0
+
     if args.command == "risk":
         import time
         from pathlib import Path
@@ -192,14 +247,9 @@ def main(argv: list[str] | None = None) -> int:
         port = rs.portfolio_returns(rets, w).dropna()
         confs = rc["confidence_levels"]
 
-        est = {}
-        for c in confs:
-            est[("historical", c)] = ve.historical(port, c, rc["window"])
-            est[("normal_ewma", c)] = ve.normal(port, c, rc["ewma_lambda"])
-            est[("student_t_ewma", c)] = ve.student_t(port, c, rc["ewma_lambda"], rc["student_t_df"])
-        fhs = ve.filtered_historical(port, confs, rc["window"], rc["garch_min_fit_obs"], rc["backtest_start"])
-        for c in confs:
-            est[("fhs_gjr_garch", c)] = fhs[c]
+        from riskplatform.risk.engine import all_estimates
+
+        est = all_estimates(port, rc, rc["backtest_start"])
         table = rb.backtest_table(port, est, rc["backtest_start"], rc["backtest_end"])
 
         pd.set_option("display.width", 220)
@@ -224,6 +274,8 @@ def main(argv: list[str] | None = None) -> int:
         hyp = rs.stressed_normal_var_es(cov, w, 0.99, st["vol_multiplier"], st["correlation_blend"])
         print(f"\nHypothetical: market {st['equity_shock']:.0%} with beta-scaled asset moves -> portfolio "
               f"{rs.equity_shock_loss(w, b, st['equity_shock']):.2%}  (betas: {b.round(2).to_dict()})")
+        for name, shocks in st.get("joint_shocks", {}).items():
+            print(f"Joint shock '{name}' {shocks} -> portfolio {rs.joint_shock_loss(w, shocks):.2%}")
         print(f"Gaussian 1-day 99%  baseline: VaR {base['var']:.2%} ES {base['es']:.2%}  |  "
               f"vol x{st['vol_multiplier']}, correlation blend {st['correlation_blend']}: "
               f"VaR {hyp['var']:.2%} ES {hyp['es']:.2%}")

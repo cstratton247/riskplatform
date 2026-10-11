@@ -28,15 +28,16 @@ class Fold:
     year: int
     test_start: pd.Timestamp
     test_end: pd.Timestamp
+    prefix: str = "wf"
 
     @property
     def label(self) -> str:
-        return f"wf_{self.year}"
+        return f"{self.prefix}_{self.year}"
 
 
-def make_folds(first_year: int, last_year: int) -> list[Fold]:
+def make_folds(first_year: int, last_year: int, prefix: str = "wf") -> list[Fold]:
     return [
-        Fold(y, pd.Timestamp(y, 1, 1), pd.Timestamp(y, 12, 31))
+        Fold(y, pd.Timestamp(y, 1, 1), pd.Timestamp(y, 12, 31), prefix)
         for y in range(first_year, last_year + 1)
     ]
 

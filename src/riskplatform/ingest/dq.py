@@ -123,6 +123,13 @@ def drop_minor_non_trading_rows(
     """
     if df.empty:
         return df, None
+    beyond = pd.DatetimeIndex(df["trade_date"]) > trading_days.max()
+    if beyond.any():                                    # real days past a stale calendar, not vendor filler
+        return df, DQResult(
+            "calendar_stale", "error", False, ticker,
+            {"calendar_ends": trading_days.max().strftime("%Y-%m-%d"), "rows_beyond": int(beyond.sum()),
+             "sample": _sample_dates(pd.DatetimeIndex(df["trade_date"])[beyond])},
+        )
     extra = ~pd.DatetimeIndex(df["trade_date"]).isin(trading_days)
     n = int(extra.sum())
     if n == 0 or n / len(df) > max_fraction:

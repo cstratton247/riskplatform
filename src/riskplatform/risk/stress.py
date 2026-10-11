@@ -75,3 +75,9 @@ def portfolio_metrics(
         out[f"hist_var_{int(c * 100)}"] = float(-q)
         out[f"hist_es_{int(c * 100)}"] = float(-df["p"][df["p"] <= q].mean())
     return pd.Series(out)
+
+
+def joint_shock_loss(weights: dict, shocks: dict) -> float:
+    """Instantaneous portfolio return when each asset moves by an explicit amount. Unlike the
+    beta-scaled scenario this can express a stock-bond selloff (2022) or a flight to quality."""
+    return float(sum(w * shocks.get(a, 0.0) for a, w in weights.items()))

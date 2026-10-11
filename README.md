@@ -31,6 +31,9 @@ riskplatform walk-forward             # full model ladder over purged walk-forwa
 riskplatform compare                  # fold-averaged table + significance tests from stored predictions
 riskplatform overlay                  # decision-level backtest vs buy-and-hold / EWMA / VIX rules
 riskplatform risk                     # VaR/ES backtests (Kupiec, Christoffersen, Basel) + stress tests
+riskplatform freeze                   # record the frozen design (then commit freeze/)
+riskplatform holdout --check          # verify the freeze without touching the holdout
+riskplatform holdout                  # evaluate the 2024+ holdout ONCE
 # sensitivity: riskplatform build-labels --quantile 0.90 && riskplatform walk-forward --quantile 0.90 && riskplatform compare --quantile 0.90
 ```
 Each run records itself in `ops.pipeline_run` and every data-quality result in
